@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DSO Window Planner</title>
+<style>
+:root {
+  --bg: #0d1117; --panel: #161b22; --line: #30363d; --text: #e6edf3; --muted: #8b949e;
+  --accent: #58a6ff; --sel: #1f2a3a; --frame: #e6edf3;
+  --galaxy: #ffc56e; --cluster: #9ccbff; --nebula: #6ff0b4; --other: #d0d6dc; --main: #ffffff;
+  --sky: #5b6068;
+}
+body.night {
+  --bg: #000; --panel: #0a0000; --line: #3a0000; --text: #ff4d4d; --muted: #a33;
+  --accent: #ff4d4d; --sel: #2a0000; --frame: #ff4d4d;
+  --galaxy: #ff3b3b; --cluster: #cc2222; --nebula: #ee3030; --other: #881818; --main: #ff7070;
+  --sky: #140000;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); display: flex;
+  flex-wrap: wrap; gap: 8px 24px; align-items: baseline; }
+header h1 { font-size: 18px; margin: 0 12px 0 0; }
+header .meta { color: var(--muted); font-size: 13px; }
+header .meta b { color: var(--text); font-weight: 600; }
+.wrap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 560px); gap: 16px; padding: 16px; }
+@media (max-width: 980px) { .wrap { grid-template-columns: 1fr; } }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center; }
+input[type=search] { background: var(--panel); color: var(--text); border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px 10px; min-width: 180px; flex: 1; }
+.chip { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px;
+  padding: 4px 10px; cursor: pointer; font-size: 13px; user-select: none; }
+.chip.on { border-color: var(--accent); color: var(--accent); }
+button { font: inherit; }
+.tablebox { overflow: auto; max-height: calc(100vh - 150px); border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 5px 8px; white-space: nowrap; text-align: left; border-bottom: 1px solid var(--line); }
+th { position: sticky; top: 0; background: var(--panel); cursor: pointer; font-weight: 600; z-index: 1; }
+th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--sel); }
+tbody tr.sel { background: var(--sel); outline: 1px solid var(--accent); }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.muted { color: var(--muted); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px;
+  position: sticky; top: 16px; align-self: start; }
+.panel h2 { margin: 0 0 2px; font-size: 17px; }
+.panel .sub { color: var(--muted); margin-bottom: 8px; }
+svg#frame { width: 100%; height: auto; background: var(--sky); border-radius: 6px; display: block; }
+.controls { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 10px; align-items: center;
+  margin: 10px 0; font-size: 13px; }
+.controls input[type=range] { width: 100%; }
+.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 16px; font-size: 13px; }
+.facts div span { color: var(--muted); }
+.links a { color: var(--accent); margin-right: 14px; }
+.nb { margin-top: 8px; font-size: 13px; }
+.nb li { margin: 2px 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+label.cb { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>DSO Window Planner</h1>
+  <div class="meta" id="meta"></div>
+  <span style="flex:1"></span>
+  <label class="cb"><input type="checkbox" id="night"> Night mode (red)</label>
+</header>
+<div class="wrap">
+  <section>
+    <div class="tools">
+      <input type="search" id="q" placeholder="Search name, constellation, type…">
+      <span class="chip on" data-g="galaxy">Galaxies</span>
+      <span class="chip on" data-g="cluster">Clusters</span>
+      <span class="chip on" data-g="nebula">Nebulae</span>
+      <span class="chip on" data-g="other">Other</span>
+      <span class="muted" id="count"></span>
+    </div>
+    <div class="tablebox"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+    <p class="muted" style="font-size:12px">Mag: V (B = blue mag when V unknown). SB: surface brightness, mag/arcsec² (~ estimated from mag and size).
+      Fill: object's major axis as % of frame width. Alt/Az in degrees at the start and end of the period.
+      Catalog: OpenNGC (CC-BY-SA 4.0) — fainter PGC/UGC galaxies are not in it.</p>
+  </section>
+  <aside class="panel" id="panel">
+    <h2 id="p-name">Select an object</h2>
+    <div class="sub" id="p-sub"></div>
+    <svg id="frame" viewBox="-50 -30 100 60" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div class="controls">
+      <span>Rotation</span><input type="range" id="rot" min="-180" max="180" step="1" value="0"><span id="rotv">0°</span>
+      <span>Zoom</span><input type="range" id="zoom" min="0" max="100" step="1" value="40"><span id="zoomv"></span>
+    </div>
+    <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:8px">
+      <label class="cb"><input type="checkbox" id="labels" checked> Labels</label>
+      <label class="cb"><input type="checkbox" id="img"> Survey photo underlay (Legacy Survey, needs internet)</label>
+    </div>
+    <div class="facts" id="facts"></div>
+    <div class="nb" id="nb"></div>
+    <div class="links" id="links" style="margin-top:8px"></div>
+    <div class="legend">
+      <span><span class="dot" style="background:var(--galaxy)"></span>galaxy</span>
+      <span><span class="dot" style="background:var(--cluster)"></span>cluster</span>
+      <span><span class="dot" style="background:var(--nebula)"></span>nebula</span>
+      <span><span class="dot" style="background:var(--other)"></span>star / other</span>
+      <span>N up, E left at rotation 0°</span>
+    </div>
+  </aside>
+</div>
+<script>
+const D = /*DATA*/null;
+const CAM = D.camera;
+const $ = s => document.querySelector(s);
+const fmt = (v, d = 1) => v == null ? "–" : v.toFixed(d);
+
+$("#meta").innerHTML =
+  `<b>${D.period}</b> · window <b>${D.window}</b> · lat ${D.lat.toFixed(3)}, lon ${D.lon.toFixed(3)} · ` +
+  `camera <b>${CAM.name}</b> → ${CAM.fw.toFixed(1)}′ × ${CAM.fh.toFixed(1)}′, ${CAM.scale.toFixed(2)}″/px`;
+
+// ---------- table ----------
+const cols = [
+  ["Object", r => r.name, r => r.name, ""],
+  ["Also", r => r.aliases.join(", "), r => r.aliases.join(", "), ""],
+  ["Type", r => `<span class="dot" style="background:var(--${r.group})"></span>${r.type}`, r => r.type, ""],
+  ["Mag", r => fmt(r.mag) + (r.mag_band === "B" ? "B" : ""), r => r.mag ?? 99, "num"],
+  ["SB", r => (r.sb_est ? "~" : "") + fmt(r.sb), r => r.sb ?? 99, "num"],
+  ["Size ′", r => r.maj == null ? "–" : (r.min === r.maj ? fmt(r.maj) : `${fmt(r.maj)}×${fmt(r.min)}`), r => -(r.maj ?? 0), "num"],
+  ["Fill", r => r.maj == null ? "–" : Math.round(100 * r.maj / CAM.fw) + "%", r => -(r.maj ?? 0), "num"],
+  ["+In frame", r => r.n_in_frame ? "+" + r.n_in_frame : "", r => -r.n_in_frame, "num"],
+  ["Alt start", r => fmt(r.alt_start), r => -r.alt_start, "num"],
+  ["Alt end", r => fmt(r.alt_end), r => -r.alt_end, "num"],
+  ["Az start", r => fmt(r.az_start), r => r.az_start, "num"],
+  ["Az end", r => fmt(r.az_end), r => r.az_end, "num"],
+  ["In window", r => `${r.enter}–${r.leave}`, r => r.enter_ts, ""],
+  ["Min", r => Math.round(r.minutes), r => -r.minutes, "num"],
+  ["Con", r => r.const, r => r.const, ""],
+  ["Name", r => r.common, r => r.common, ""],
+];
+let sortCol = 3, sortDir = 1, sel = null;
+const groups = new Set(["galaxy", "cluster", "nebula", "other"]);
+$("#tbl thead").innerHTML = "<tr>" + cols.map((c, i) => `<th class="${c[3]}" data-i="${i}">${c[0]}</th>`).join("") + "</tr>";
+$("#tbl thead").onclick = e => {
+  const i = +e.target.dataset.i; if (isNaN(i)) return;
+  sortDir = sortCol === i ? -sortDir : 1; sortCol = i; renderTable();
+};
+document.querySelectorAll(".chip").forEach(ch => ch.onclick = () => {
+  ch.classList.toggle("on");
+  ch.classList.contains("on") ? groups.add(ch.dataset.g) : groups.delete(ch.dataset.g);
+  renderTable();
+});
+$("#q").oninput = renderTable;
+
+function renderTable() {
+  const q = $("#q").value.trim().toLowerCase();
+  const key = cols[sortCol][2];
+  const rows = D.rows.filter(r => groups.has(r.group) &&
+      (!q || [r.name, r.aliases.join(" "), r.type, r.const, r.common].join(" ").toLowerCase().includes(q)))
+    .sort((a, b) => { const x = key(a), y = key(b); return (x > y ? 1 : x < y ? -1 : 0) * sortDir; });
+  $("#count").textContent = `${rows.length} of ${D.rows.length}`;
+  $("#tbl tbody").innerHTML = rows.map(r =>
+    `<tr data-i="${r.i}" class="${sel && sel.i === r.i ? "sel" : ""}">` +
+    cols.map(c => `<td class="${c[3]}">${c[1](r)}</td>`).join("") + "</tr>").join("");
+}
+$("#tbl tbody").onclick = e => {
+  const tr = e.target.closest("tr"); if (!tr) return;
+  select(D.rows[+tr.dataset.i]);
+};
+
+// ---------- frame view ----------
+const svgNS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent) {
+  const n = document.createElementNS(svgNS, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+function viewWidth() {
+  // zoom slider 0..100 -> view width from 1.1x to 6x the frame width (log scale)
+  const base = Math.max(CAM.fw, sel && sel.maj ? sel.maj * 0.8 : 0);
+  return base * 1.1 * Math.pow(6 / 1.1, +$("#zoom").value / 100);
+}
+function drawFrame() {
+  const svg = $("#frame"); svg.innerHTML = "";
+  if (!sel) return;
+  const rot = +$("#rot").value, th = rot * Math.PI / 180;
+  const vw = viewWidth(), vh = vw * 0.62;
+  svg.setAttribute("viewBox", `${-vw / 2} ${-vh / 2} ${vw} ${vh}`);
+  $("#rotv").textContent = rot + "°";
+  $("#zoomv").textContent = `${(vw / 60).toFixed(2)}°`;
+  const fs = vw / 48, showLabels = $("#labels").checked;
+  const css = getComputedStyle(document.body);
+  const col = g => css.getPropertyValue("--" + g).trim();
+
+  if ($("#img").checked) {
+    // square cutout covering the view diagonal, rotated with the sky
+    const diag = Math.hypot(vw, vh) * 1.02;
+    const px = 900;
+    const url = "https://www.legacysurvey.org/viewer/jpeg-cutout?layer=ls-dr10" +
+      `&ra=${sel.ra}&dec=${sel.dec}&width=${px}&height=${px}&pixscale=${(diag * 60 / px).toFixed(3)}`;
+    const g = el("g", { transform: `rotate(${rot})` }, svg);
+    el("image", { href: url, x: -diag / 2, y: -diag / 2, width: diag, height: diag, opacity: 0.9 }, g);
+  }
+
+  const objs = [{ ...sel, x: 0, y: 0, main: true }, ...sel.nb];
+  for (const o of objs) {
+    const x = o.x * Math.cos(th) - o.y * Math.sin(th);
+    const y = o.x * Math.sin(th) + o.y * Math.cos(th);
+    o._x = x; o._y = y;
+    const c = o.main ? col("main") : col(o.group);
+    const sw = o.main ? 2 : 1.3;
+    const common = { fill: "none", stroke: c, "stroke-width": sw, "vector-effect": "non-scaling-stroke" };
+    let rx = o.maj ? o.maj / 2 : 0, ry = o.min ? o.min / 2 : rx;
+    if (!rx) { rx = ry = vw / 180; }
+    rx = Math.max(rx, vw / 400); ry = Math.max(ry, vw / 400);
+    const ang = -90 - (o.pa ?? 90) + rot;   // PA: north through east
+    const g = el("g", { transform: `translate(${x} ${y}) rotate(${ang})` }, svg);
+    if (o.group === "galaxy") {
+      el("ellipse", { rx, ry, ...common, fill: c, "fill-opacity": o.main ? 0.18 : 0.12 }, g);
+      el("ellipse", { rx: rx * 0.25, ry: ry * 0.25, fill: c, "fill-opacity": 0.5, stroke: "none" }, g);
+    } else if (o.code === "GCl") {
+      el("circle", { r: rx, ...common, fill: c, "fill-opacity": 0.08 }, g);
+      el("circle", { r: rx * 0.3, ...common, fill: c, "fill-opacity": 0.3 }, g);
+    } else if (o.group === "cluster") {
+      el("ellipse", { rx, ry, ...common, "stroke-dasharray": "4 3" }, g);
+    } else if (o.code === "PN") {
+      el("circle", { r: rx, ...common }, g);
+      el("path", { d: `M${-rx * 1.6} 0H${-rx}M${rx} 0H${rx * 1.6}M0 ${-rx * 1.6}V${-rx}M0 ${rx}V${rx * 1.6}`, ...common }, g);
+    } else if (o.group === "nebula") {
+      el("rect", { x: -rx, y: -ry, width: 2 * rx, height: 2 * ry, rx: Math.min(rx, ry) * 0.3, ...common,
+        "stroke-dasharray": "1.5 2.5" }, g);
+    } else {
+      el("circle", { r: vw / 250, fill: c, stroke: "none" }, g);
+    }
+    if (showLabels && Math.abs(x) < vw / 2 && Math.abs(y) < vh / 2) {
+      const t = el("text", { x: x + Math.max(rx, ry) * 0.75 + fs * 0.3, y: y - Math.max(rx, ry) * 0.75 - fs * 0.2,
+        fill: c, "font-size": o.main ? fs * 1.15 : fs, "font-weight": o.main ? 600 : 400,
+        "font-family": "system-ui, sans-serif" }, svg);
+      t.textContent = o.name + (o.mag != null && !o.main ? ` ${o.mag.toFixed(1)}` : "");
+    }
+  }
+
+  // camera frame (fixed), centre cross, outside dimming
+  const fw = CAM.fw, fh = CAM.fh, frameCol = col("frame");
+  el("path", { d: `M${-vw} ${-vh}H${vw}V${vh}H${-vw}Z M${-fw / 2} ${-fh / 2}V${fh / 2}H${fw / 2}V${-fh / 2}Z`,
+    fill: "#000", "fill-opacity": 0.3, "fill-rule": "evenodd" }, svg);
+  el("rect", { x: -fw / 2, y: -fh / 2, width: fw, height: fh, fill: "none", stroke: frameCol,
+    "stroke-width": 1.5, "vector-effect": "non-scaling-stroke" }, svg);
+  const cs = Math.min(fw, fh) * 0.04;
+  el("path", { d: `M${-cs} 0H${cs}M0 ${-cs}V${cs}`, stroke: frameCol, "stroke-opacity": 0.5,
+    "stroke-width": 1, "vector-effect": "non-scaling-stroke" }, svg);
+  const lab = el("text", { x: -fw / 2, y: fh / 2 + fs * 1.1, fill: frameCol, "font-size": fs * 0.85,
+    "fill-opacity": 0.8, "font-family": "system-ui, sans-serif" }, svg);
+  lab.textContent = `${CAM.name}  ${fw.toFixed(1)}′×${fh.toFixed(1)}′`;
+
+  // compass: N and E arrows in the corner
+  const L = vh * 0.09, cx = vw / 2 - L * 1.6, cy = vh / 2 - L * 1.6;
+  const arrow = (dx, dy, txt) => {
+    const ex = dx * Math.cos(th) - dy * Math.sin(th), ey = dx * Math.sin(th) + dy * Math.cos(th);
+    el("line", { x1: cx, y1: cy, x2: cx + ex * L, y2: cy + ey * L, stroke: frameCol, "stroke-width": 1.2,
+      "vector-effect": "non-scaling-stroke" }, svg);
+    const t = el("text", { x: cx + ex * L * 1.35, y: cy + ey * L * 1.35 + fs * 0.35, fill: frameCol,
+      "font-size": fs * 0.9, "text-anchor": "middle", "font-family": "system-ui, sans-serif" }, svg);
+    t.textContent = txt;
+  };
+  arrow(0, -1, "N"); arrow(-1, 0, "E");
+
+  // neighbours inside the frame at this rotation
+  const inside = sel.nb.filter(o => Math.abs(o._x) <= fw / 2 && Math.abs(o._y) <= fh / 2);
+  $("#nb").innerHTML = inside.length
+    ? `<b>Also in frame (${inside.length}):</b><ul style="margin:4px 0 0; padding-left:18px">` +
+      inside.map(o => `<li>${o.name} — ${o.type}, mag ${fmt(o.mag)}, ${o.maj ? fmt(o.maj) + "′" : "size ?"}` +
+        ` <span class="muted">(${fmt(Math.hypot(o.x, o.y))}′ away)</span></li>`).join("") + "</ul>"
+    : `<span class="muted">No other catalog objects in the frame at this rotation.</span>`;
+}
+
+function select(r) {
+  sel = r;
+  document.querySelectorAll("#tbl tbody tr").forEach(tr => tr.classList.toggle("sel", +tr.dataset.i === r.i));
+  $("#p-name").textContent = r.name + (r.aliases.length ? ` (${r.aliases.join(", ")})` : "");
+  $("#p-sub").textContent = [r.type, r.common, r.const].filter(Boolean).join(" · ");
+  const px = r.maj ? Math.round(r.maj * 60 / CAM.scale) : null;
+  $("#facts").innerHTML = [
+    ["Magnitude", fmt(r.mag) + (r.mag_band ? " " + r.mag_band : "")],
+    ["Surface brightness", r.sb == null ? "–" : (r.sb_est ? "~" : "") + fmt(r.sb) + " mag/″²"],
+    ["Size", r.maj == null ? "–" : (r.min === r.maj ? fmt(r.maj) : `${fmt(r.maj)} × ${fmt(r.min)}`) + "′" +
+      (r.pa != null ? `, PA ${r.pa}°` : "")],
+    ["On sensor", px ? `${px} px across, ${Math.round(100 * r.maj / CAM.fw)}% of frame width` : "–"],
+    ["Altitude", `${fmt(r.alt_start)}° → ${fmt(r.alt_end)}°`],
+    ["Azimuth", `${fmt(r.az_start)}° → ${fmt(r.az_end)}°`],
+    ["In window", `${r.enter}–${r.leave} (${Math.round(r.minutes)} min)`],
+    ["RA / Dec (J2000)", `${r.ra_s} / ${r.dec_s}`],
+  ].map(([k, v]) => `<div><span>${k}:</span> ${v}</div>`).join("");
+  const id = encodeURIComponent(r.name);
+  const fov = (Math.max(CAM.fw * 1.5, (r.maj || 0) * 1.5) / 60).toFixed(3);
+  $("#links").innerHTML =
+    `<a target="_blank" rel="noopener" href="https://aladin.cds.unistra.fr/AladinLite/?target=${r.ra}%20${r.dec}&fov=${fov}&survey=CDS%2FP%2FDSS2%2Fcolor">Aladin sky image</a>` +
+    `<a target="_blank" rel="noopener" href="https://www.legacysurvey.org/viewer?ra=${r.ra}&dec=${r.dec}&layer=ls-dr10&zoom=12">Legacy Survey</a>` +
+    `<a target="_blank" rel="noopener" href="https://simbad.cds.unistra.fr/simbad/sim-id?Ident=${id}">SIMBAD</a>` +
+    `<a target="_blank" rel="noopener" href="https://www.google.com/search?tbm=isch&q=${id}${r.common ? "+" + encodeURIComponent(r.common) : ""}">Photos</a>`;
+  drawFrame();
+}
+["#rot", "#zoom"].forEach(s => $(s).oninput = drawFrame);
+["#labels", "#img"].forEach(s => $(s).onchange = drawFrame);
+$("#night").onchange = e => { document.body.classList.toggle("night", e.target.checked); drawFrame(); };
+
+renderTable();
+// open a specific object with report.html#M 101 or #NGC 5907
+function fromHash() {
+  const h = decodeURIComponent(location.hash.slice(1)).replace(/\s+/g, "").toUpperCase();
+  return h && D.rows.find(r => [r.name, ...r.aliases].some(n => n.replace(/\s+/g, "").toUpperCase() === h));
+}
+window.onhashchange = () => { const r = fromHash(); if (r) { select(r); scrollToSel(); } };
+function scrollToSel() { const tr = document.querySelector("#tbl tbody tr.sel"); if (tr) tr.scrollIntoView({ block: "nearest" }); }
+if (D.rows.length) {
+  select(fromHash() || [...D.rows].sort((a, b) => (a.mag ?? 99) - (b.mag ?? 99))[0]);
+}
+</script>
+</body>
+</html>
