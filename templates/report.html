@@ -9,13 +9,13 @@
   --bg: #0d1117; --panel: #161b22; --line: #30363d; --text: #e6edf3; --muted: #8b949e;
   --accent: #58a6ff; --sel: #1f2a3a; --frame: #e6edf3;
   --galaxy: #ffc56e; --cluster: #9ccbff; --nebula: #6ff0b4; --other: #d0d6dc; --main: #ffffff;
-  --sky: #5b6068;
+  --sky: #5b6068; --ground: #2c3036; --grid: rgba(255,255,255,.22); --win: #ffd166;
 }
 body.night {
   --bg: #000; --panel: #0a0000; --line: #3a0000; --text: #ff4d4d; --muted: #a33;
   --accent: #ff4d4d; --sel: #2a0000; --frame: #ff4d4d;
   --galaxy: #ff3b3b; --cluster: #cc2222; --nebula: #ee3030; --other: #881818; --main: #ff7070;
-  --sky: #140000;
+  --sky: #140000; --ground: #050000; --grid: rgba(255,60,60,.25); --win: #ff4d4d;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text);
@@ -33,13 +33,25 @@ input[type=search] { background: var(--panel); color: var(--text); border: 1px s
 .chip { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px;
   padding: 4px 10px; cursor: pointer; font-size: 13px; user-select: none; }
 .chip.on { border-color: var(--accent); color: var(--accent); }
+.chip.fav.on { border-color: var(--win); color: var(--win); }
+.star { cursor: pointer; background: none; border: 0; padding: 0 2px; font-size: 16px; line-height: 1;
+  color: var(--muted); opacity: .55; }
+.star:hover { opacity: 1; }
+.star.on { color: var(--win); opacity: 1; }
+h2 .star { font-size: 20px; margin-right: 6px; vertical-align: -1px; }
+.copy { cursor: pointer; background: none; border: 1px solid transparent; border-radius: 6px; color: var(--muted);
+  padding: 3px 5px; margin-left: 8px; vertical-align: 1px; line-height: 0; }
+.copy:hover { color: var(--text); border-color: var(--line); }
+.copy.done { color: var(--nebula); }
+.copy-note { font-size: 12px; font-weight: 400; color: var(--nebula); margin-left: 4px; }
+td.fav { padding-right: 0; }
 button { font: inherit; }
 .tablebox { overflow: auto; max-height: calc(100vh - 150px); border: 1px solid var(--line); border-radius: 8px; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
 th, td { padding: 5px 8px; white-space: nowrap; text-align: left; border-bottom: 1px solid var(--line); }
 th { position: sticky; top: 0; background: var(--panel); cursor: pointer; font-weight: 600; z-index: 1; }
 th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
-tbody tr { cursor: pointer; }
+tbody tr { cursor: pointer; scroll-margin-top: 34px; }
 tbody tr:hover { background: var(--sel); }
 tbody tr.sel { background: var(--sel); outline: 1px solid var(--accent); }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
@@ -49,6 +61,9 @@ tbody tr.sel { background: var(--sel); outline: 1px solid var(--accent); }
 .panel h2 { margin: 0 0 2px; font-size: 17px; }
 .panel .sub { color: var(--muted); margin-bottom: 8px; }
 svg#frame { width: 100%; height: auto; background: var(--sky); border-radius: 6px; display: block; }
+svg#sky { width: 100%; height: auto; background: var(--sky); border-radius: 6px; display: block; margin-bottom: 10px; }
+.subhead { font-weight: 600; margin: 4px 0 6px; }
+.subhead span { font-weight: 400; color: var(--muted); }
 .controls { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 10px; align-items: center;
   margin: 10px 0; font-size: 13px; }
 .controls input[type=range] { width: 100%; }
@@ -72,11 +87,13 @@ label.cb { display: inline-flex; gap: 6px; align-items: center; cursor: pointer;
   <section>
     <div class="tools">
       <input type="search" id="q" placeholder="Search name, constellation, type…">
+      <span class="chip fav" id="favchip" title="Show only favorites">★ Favorites</span>
       <span class="chip on" data-g="galaxy">Galaxies</span>
       <span class="chip on" data-g="cluster">Clusters</span>
       <span class="chip on" data-g="nebula">Nebulae</span>
       <span class="chip on" data-g="other">Other</span>
       <span class="muted" id="count"></span>
+      <span class="chip" id="copyfav" title="Copy favorites, one per line, for favorites.txt">Copy list</span>
     </div>
     <div class="tablebox"><table id="tbl"><thead></thead><tbody></tbody></table></div>
     <p class="muted" style="font-size:12px">Mag: V (B = blue mag when V unknown). SB: surface brightness, mag/arcsec² (~ estimated from mag and size).
@@ -84,7 +101,7 @@ label.cb { display: inline-flex; gap: 6px; align-items: center; cursor: pointer;
       Catalog: OpenNGC (CC-BY-SA 4.0) — fainter PGC/UGC galaxies are not in it.</p>
   </section>
   <aside class="panel" id="panel">
-    <h2 id="p-name">Select an object</h2>
+    <h2><button class="star" id="p-star" title="Favorite (f)">☆</button><span id="p-name">Select an object</span><button class="copy" id="p-copy" title="Copy name (c)"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M3.5 10.5h-.5a1.5 1.5 0 0 1-1.5-1.5V3A1.5 1.5 0 0 1 3 1.5h5A1.5 1.5 0 0 1 9.5 3v.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button><span class="copy-note" id="p-copy-note"></span></h2>
     <div class="sub" id="p-sub"></div>
     <svg id="frame" viewBox="-50 -30 100 60" xmlns="http://www.w3.org/2000/svg"></svg>
     <div class="controls">
@@ -95,6 +112,8 @@ label.cb { display: inline-flex; gap: 6px; align-items: center; cursor: pointer;
       <label class="cb"><input type="checkbox" id="labels" checked> Labels</label>
       <label class="cb"><input type="checkbox" id="img"> Survey photo underlay (Legacy Survey, needs internet)</label>
     </div>
+    <div class="subhead" id="sky-title">Where in the sky</div>
+    <svg id="sky" viewBox="-75 -92 150 105" xmlns="http://www.w3.org/2000/svg"></svg>
     <div class="facts" id="facts"></div>
     <div class="nb" id="nb"></div>
     <div class="links" id="links" style="margin-top:8px"></div>
@@ -118,7 +137,27 @@ $("#meta").innerHTML =
   `camera <b>${CAM.name}</b> → ${CAM.fw.toFixed(1)}′ × ${CAM.fh.toFixed(1)}′, ${CAM.scale.toFixed(2)}″/px`;
 
 // ---------- table ----------
+// ---------- favorites: kept in this browser + favorites.txt from the tool ----------
+const FAV_KEY = "dso-planner-favorites";
+const FAV = new Set(D.favorites || []);
+try { (JSON.parse(localStorage.getItem(FAV_KEY)) || []).forEach(n => FAV.add(n)); } catch (e) {}
+const saveFav = () => { try { localStorage.setItem(FAV_KEY, JSON.stringify([...FAV])); } catch (e) {} };
+const starBtn = r => `<button class="star${FAV.has(r.name) ? " on" : ""}" data-star="${r.i}" title="Favorite (f)">${FAV.has(r.name) ? "★" : "☆"}</button>`;
+let favOnly = false;
+function toggleFav(r) {
+  FAV.has(r.name) ? FAV.delete(r.name) : FAV.add(r.name);
+  saveFav();
+  renderTable();
+  if (sel === r) updateStar();
+}
+function updateStar() {
+  const on = sel && FAV.has(sel.name);
+  $("#p-star").className = "star" + (on ? " on" : "");
+  $("#p-star").textContent = on ? "★" : "☆";
+}
+
 const cols = [
+  ["★", starBtn, r => FAV.has(r.name) ? 0 : 1, "fav"],
   ["Object", r => r.name, r => r.name, ""],
   ["Also", r => r.aliases.join(", "), r => r.aliases.join(", "), ""],
   ["Type", r => `<span class="dot" style="background:var(--${r.group})"></span>${r.type}`, r => r.type, ""],
@@ -136,32 +175,64 @@ const cols = [
   ["Con", r => r.const, r => r.const, ""],
   ["Name", r => r.common, r => r.common, ""],
 ];
-let sortCol = 3, sortDir = 1, sel = null;
+let sortCol = 4, sortDir = 1, sel = null;
 const groups = new Set(["galaxy", "cluster", "nebula", "other"]);
 $("#tbl thead").innerHTML = "<tr>" + cols.map((c, i) => `<th class="${c[3]}" data-i="${i}">${c[0]}</th>`).join("") + "</tr>";
 $("#tbl thead").onclick = e => {
   const i = +e.target.dataset.i; if (isNaN(i)) return;
   sortDir = sortCol === i ? -sortDir : 1; sortCol = i; renderTable();
 };
-document.querySelectorAll(".chip").forEach(ch => ch.onclick = () => {
+document.querySelectorAll(".chip[data-g]").forEach(ch => ch.onclick = () => {
   ch.classList.toggle("on");
   ch.classList.contains("on") ? groups.add(ch.dataset.g) : groups.delete(ch.dataset.g);
   renderTable();
 });
 $("#q").oninput = renderTable;
+$("#favchip").onclick = () => { favOnly = !favOnly; $("#favchip").classList.toggle("on", favOnly); renderTable(); };
+$("#p-star").onclick = () => { if (sel) toggleFav(sel); };
+async function copyText(txt) {
+  try { await navigator.clipboard.writeText(txt); }
+  catch (e) {     // fallback for browsers that block the clipboard API on local files
+    const ta = Object.assign(document.createElement("textarea"), { value: txt });
+    document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove();
+  }
+}
+const ICON_COPY = $("#p-copy").innerHTML;
+const ICON_DONE = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 4.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+let copyTimer;
+async function copyName() {
+  if (!sel) return;
+  await copyText(sel.name);
+  const b = $("#p-copy");
+  b.innerHTML = ICON_DONE; b.classList.add("done"); $("#p-copy-note").textContent = "copied";
+  clearTimeout(copyTimer);
+  copyTimer = setTimeout(() => { b.innerHTML = ICON_COPY; b.classList.remove("done"); $("#p-copy-note").textContent = ""; }, 1300);
+}
+$("#p-copy").onclick = copyName;
+$("#copyfav").onclick = async () => {
+  const names = D.rows.filter(r => FAV.has(r.name)).map(r => r.name);
+  const extra = [...FAV].filter(n => !D.rows.some(r => r.name === n));   // favorites not in this report
+  const txt = [...names, ...extra].join("\n");
+  await copyText(txt);
+  const b = $("#copyfav"), old = b.textContent;
+  b.textContent = `Copied ${names.length + extra.length}`; setTimeout(() => b.textContent = old, 1500);
+};
 
 function renderTable() {
   const q = $("#q").value.trim().toLowerCase();
   const key = cols[sortCol][2];
-  const rows = D.rows.filter(r => groups.has(r.group) &&
+  const rows = D.rows.filter(r => groups.has(r.group) && (!favOnly || FAV.has(r.name)) &&
       (!q || [r.name, r.aliases.join(" "), r.type, r.const, r.common].join(" ").toLowerCase().includes(q)))
     .sort((a, b) => { const x = key(a), y = key(b); return (x > y ? 1 : x < y ? -1 : 0) * sortDir; });
-  $("#count").textContent = `${rows.length} of ${D.rows.length}`;
+  const nFav = D.rows.filter(r => FAV.has(r.name)).length;
+  $("#count").textContent = `${rows.length} of ${D.rows.length}` + (nFav ? ` · ★ ${nFav}` : "");
   $("#tbl tbody").innerHTML = rows.map(r =>
     `<tr data-i="${r.i}" class="${sel && sel.i === r.i ? "sel" : ""}">` +
     cols.map(c => `<td class="${c[3]}">${c[1](r)}</td>`).join("") + "</tr>").join("");
 }
 $("#tbl tbody").onclick = e => {
+  const st = e.target.closest("[data-star]");
+  if (st) { toggleFav(D.rows[+st.dataset.star]); return; }
   const tr = e.target.closest("tr"); if (!tr) return;
   select(D.rows[+tr.dataset.i]);
 };
@@ -216,10 +287,8 @@ function drawFrame() {
     const g = el("g", { transform: `translate(${x} ${y}) rotate(${ang})` }, svg);
     if (o.group === "galaxy") {
       el("ellipse", { rx, ry, ...common, fill: c, "fill-opacity": o.main ? 0.18 : 0.12 }, g);
-      el("ellipse", { rx: rx * 0.25, ry: ry * 0.25, fill: c, "fill-opacity": 0.5, stroke: "none" }, g);
     } else if (o.code === "GCl") {
       el("circle", { r: rx, ...common, fill: c, "fill-opacity": 0.08 }, g);
-      el("circle", { r: rx * 0.3, ...common, fill: c, "fill-opacity": 0.3 }, g);
     } else if (o.group === "cluster") {
       el("ellipse", { rx, ry, ...common, "stroke-dasharray": "4 3" }, g);
     } else if (o.code === "PN") {
@@ -277,7 +346,10 @@ function select(r) {
   sel = r;
   document.querySelectorAll("#tbl tbody tr").forEach(tr => tr.classList.toggle("sel", +tr.dataset.i === r.i));
   $("#p-name").textContent = r.name + (r.aliases.length ? ` (${r.aliases.join(", ")})` : "");
-  $("#p-sub").textContent = [r.type, r.common, r.const].filter(Boolean).join(" · ");
+  updateStar();
+  const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  $("#p-sub").innerHTML = `<span class="dot" style="background:var(--${r.group})"></span>` +
+    [r.type, r.common, r.const].filter(Boolean).map(esc).join(" · ");
   const px = r.maj ? Math.round(r.maj * 60 / CAM.scale) : null;
   $("#facts").innerHTML = [
     ["Magnitude", fmt(r.mag) + (r.mag_band ? " " + r.mag_band : "")],
@@ -298,10 +370,129 @@ function select(r) {
     `<a target="_blank" rel="noopener" href="https://simbad.cds.unistra.fr/simbad/sim-id?Ident=${id}">SIMBAD</a>` +
     `<a target="_blank" rel="noopener" href="https://www.google.com/search?tbm=isch&q=${id}${r.common ? "+" + encodeURIComponent(r.common) : ""}">Photos</a>`;
   drawFrame();
+  drawSky();
 }
+
+// ---------- sky panorama: 180° of horizon centred on the window ----------
+const W = D.win;
+const winWidth = ((W.az_to - W.az_from) % 360 + 360) % 360 || 360;
+const winCenter = (W.az_from + winWidth / 2) % 360;
+const skyX = az => ((az - winCenter + 540) % 360) - 180;   // 0 = window centre
+// Chart scale: azimuth span around the window, altitude stretched so the window is tall
+const SKY_HALF = Math.min(90, Math.max(50, winWidth * 1.67));  // half of the azimuth span shown
+const SKY_TOP = Math.min(90, W.alt_max + 5);                   // highest altitude shown
+const SKY_K = Math.max(1, Math.min(2, 95 / SKY_TOP));          // vertical stretch (1.8 for a 45° window)
+const SKY_GROUND = 11;
+const skyY = alt => -alt * SKY_K;                                // points above SKY_TOP are clipped
+const inWin = (alt, az) => alt >= W.alt_min && alt <= W.alt_max && ((az - W.az_from + 360) % 360) <= winWidth;
+const COMPASS16 = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+const compass = az => COMPASS16[Math.round(((az % 360) + 360) % 360 / 22.5) % 16];
+
+function drawSky() {
+  const svg = $("#sky"); svg.innerHTML = "";
+  if (!sel) return;
+  const css = getComputedStyle(document.body);
+  const v = n => css.getPropertyValue("--" + n).trim();
+  const fs = 3.6, font = "system-ui, sans-serif";
+  const text = (x, y, s, attrs = {}) => {
+    const t = el("text", { x, y, "font-size": fs, "font-family": font, fill: v("muted"),
+      stroke: v("sky"), "stroke-width": 0.9, "paint-order": "stroke", "stroke-linejoin": "round", ...attrs }, svg);
+    t.textContent = s; return t;
+  };
+  svg.setAttribute("viewBox", `${-SKY_HALF} ${skyY(SKY_TOP) - 2} ${2 * SKY_HALF} ${-skyY(SKY_TOP) + 2 + SKY_GROUND}`);
+  $("#sky-title").innerHTML = `Where in the sky <span>— facing ${compass(winCenter)}, <span style="color:var(--win)">window ${compass(W.az_from)}–${compass(W.az_to)}, ${W.alt_min}–${W.alt_max}°</span>, from ${D.track_times[0]}</span>`;
+
+  // ground and altitude grid
+  el("rect", { x: -SKY_HALF, y: 0, width: 2 * SKY_HALF, height: SKY_GROUND, fill: v("ground") }, svg);
+  for (let a = SKY_TOP <= 60 ? 10 : 15, st = a; a < SKY_TOP; a += st) {
+    el("line", { x1: -SKY_HALF, x2: SKY_HALF, y1: skyY(a), y2: skyY(a), stroke: v("grid"), "stroke-width": 0.3, "stroke-dasharray": "1.5 1.5" }, svg);
+    text(-SKY_HALF + 1.5, skyY(a) - 1, a + "°", { "font-size": fs * 0.8 });
+  }
+  el("line", { x1: -SKY_HALF, x2: SKY_HALF, y1: 0, y2: 0, stroke: v("muted"), "stroke-width": 0.5 }, svg);
+  // compass points along the horizon
+  for (let az = 0; az < 360; az += 22.5) {
+    const x = skyX(az); if (Math.abs(x) > SKY_HALF - 2) continue;
+    const major = az % 45 === 0;
+    el("line", { x1: x, x2: x, y1: 0, y2: major ? 2 : 1.2, stroke: v("muted"), "stroke-width": 0.4 }, svg);
+    text(x, 7, compass(az), { "text-anchor": "middle", "font-size": major ? fs : fs * 0.75,
+      fill: major ? v("text") : v("muted"), "font-weight": major ? 600 : 400, stroke: v("ground") });
+  }
+
+  // the window
+  const wx = skyX(W.az_from);
+  el("rect", { x: wx, y: skyY(W.alt_max), width: winWidth, height: skyY(W.alt_min) - skyY(W.alt_max),
+    fill: v("win"), "fill-opacity": 0.1, stroke: v("win"), "stroke-width": 0.6 }, svg);
+
+  // other objects of the list at the start of the period (faint, clickable)
+  if (D.rows.length <= 500) {
+    for (const r of D.rows) {
+      if (r === sel) continue;
+      const [alt, az] = r.track[0], x = skyX(az);
+      if (alt < 0 || alt > SKY_TOP || Math.abs(x) > SKY_HALF) continue;
+      const c = el("circle", { cx: x, cy: skyY(alt), r: 0.9, fill: v(r.group), "fill-opacity": 0.45,
+        style: "cursor:pointer" }, svg);
+      el("title", {}, c).textContent = `${r.name} ${r.common || ""}`;
+      c.onclick = () => { select(r); scrollToSel(); };
+    }
+  }
+
+  // path of the selected object; split where it wraps around behind the viewer
+  const pts = sel.track.map(([alt, az], i) => ({ x: skyX(az), y: skyY(alt), alt, az, t: D.track_times[i] }));
+  const segs = [];
+  let cur = [];
+  pts.forEach((p, i) => {
+    if (i && Math.abs(p.x - pts[i - 1].x) > 90) { segs.push(cur); cur = []; }
+    cur.push(p);
+  });
+  segs.push(cur);
+  for (const s of segs) {
+    if (s.length < 2) continue;
+    el("polyline", { points: s.map(p => `${p.x},${p.y}`).join(" "), fill: "none", stroke: v("main"),
+      "stroke-width": 0.5, "stroke-opacity": 0.55, "stroke-dasharray": "1.2 1" }, svg);
+    for (let i = 1; i < s.length; i++) {     // solid where inside the window
+      if (inWin(s[i - 1].alt, s[i - 1].az) && inWin(s[i].alt, s[i].az))
+        el("line", { x1: s[i - 1].x, y1: s[i - 1].y, x2: s[i].x, y2: s[i].y, stroke: v("main"), "stroke-width": 0.9 }, svg);
+    }
+  }
+  // hour marks
+  pts.forEach((p, i) => {
+    if (i === 0 || i === pts.length - 1 || !p.t.endsWith(":00") || Math.abs(p.x) > SKY_HALF || p.alt < 0 || p.alt > SKY_TOP - 4) return;
+    el("circle", { cx: p.x, cy: p.y, r: 0.7, fill: v("main") }, svg);
+    text(p.x + 1.4, p.y + 1.5, p.t.slice(0, 2) + "h", { "font-size": fs * 0.75, fill: v("text") });
+  });
+  // end and start markers
+  const end = pts[pts.length - 1], start = pts[0];
+  const topY = skyY(SKY_TOP);
+  const above = p => p.alt > SKY_TOP;
+  const upArrow = p => el("path", { d: `M${p.x} ${topY + 0.6}l-2 3.4h4z`, fill: v("main") }, svg);
+  const label = (p, s, big) => {
+    const right = p.x < SKY_HALF / 2;
+    const y = above(p) ? topY + 8 : p.y - 2;
+    if (above(p)) s += " ↑";
+    text(p.x + (right ? 2.5 : -2.5), y, s, { "text-anchor": right ? "start" : "end",
+      fill: v("text"), "font-size": big ? fs * 1.05 : fs * 0.85, "font-weight": big ? 600 : 400 });
+  };
+  if (Math.abs(end.x) <= SKY_HALF && end.alt > -10) {
+    if (above(end)) upArrow(end);
+    else el("circle", { cx: end.x, cy: end.y, r: 1.3, fill: "none", stroke: v("main"), "stroke-width": 0.5 }, svg);
+    label(end, `end ${end.t} · ${end.alt.toFixed(0)}°`, false);
+  }
+  if (Math.abs(start.x) <= SKY_HALF) {
+    if (above(start)) upArrow(start);
+    else {
+      el("circle", { cx: start.x, cy: start.y, r: 2.6, fill: v("main"), "fill-opacity": 0.25 }, svg);
+      el("circle", { cx: start.x, cy: start.y, r: 1.4, fill: v("main") }, svg);
+    }
+    label(start, `start ${start.t} · ${start.alt.toFixed(0)}°` + (start.alt < 0 ? " (below horizon)" : ""), true);
+  } else {
+    text(0, skyY(SKY_TOP) + 6, `At ${start.t} the object is outside this view (az ${start.az.toFixed(0)}°)`,
+      { "text-anchor": "middle", fill: v("text") });
+  }
+}
+
 ["#rot", "#zoom"].forEach(s => $(s).oninput = drawFrame);
 ["#labels", "#img"].forEach(s => $(s).onchange = drawFrame);
-$("#night").onchange = e => { document.body.classList.toggle("night", e.target.checked); drawFrame(); };
+$("#night").onchange = e => { document.body.classList.toggle("night", e.target.checked); drawFrame(); drawSky(); };
 
 renderTable();
 // open a specific object with report.html#M 101 or #NGC 5907
@@ -311,6 +502,25 @@ function fromHash() {
 }
 window.onhashchange = () => { const r = fromHash(); if (r) { select(r); scrollToSel(); } };
 function scrollToSel() { const tr = document.querySelector("#tbl tbody tr.sel"); if (tr) tr.scrollIntoView({ block: "nearest" }); }
+
+// Up/Down arrows (or j/k) move the selection through the visible table rows
+document.addEventListener("keydown", e => {
+  const t = e.target;
+  if (t.type === "range" || t.type === "checkbox") return;     // sliders keep their own arrows
+  const typing = t.tagName === "INPUT" || t.tagName === "TEXTAREA";
+  const down = e.key === "ArrowDown" || (!typing && e.key === "j");
+  const up = e.key === "ArrowUp" || (!typing && e.key === "k");
+  if (!typing && e.key === "f" && sel) { e.preventDefault(); toggleFav(sel); return; }
+  if (!typing && e.key === "c" && sel && !e.ctrlKey && !e.metaKey) { e.preventDefault(); copyName(); return; }
+  if (!down && !up) return;
+  const trs = [...document.querySelectorAll("#tbl tbody tr")];
+  if (!trs.length) return;
+  e.preventDefault();
+  let i = trs.findIndex(tr => tr.classList.contains("sel"));
+  i = i < 0 ? 0 : Math.max(0, Math.min(trs.length - 1, i + (down ? 1 : -1)));
+  select(D.rows[+trs[i].dataset.i]);
+  scrollToSel();
+});
 if (D.rows.length) {
   select(fromHash() || [...D.rows].sort((a, b) => (a.mag ?? 99) - (b.mag ?? 99))[0]);
 }

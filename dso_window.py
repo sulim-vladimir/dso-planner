@@ -31,6 +31,26 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(HERE, "data")
 CONFIG_FILE = os.path.join(HERE, "config.json")
+FAVORITES_FILE = os.path.join(HERE, "favorites.txt")
+
+
+def norm_id(s):
+    """'M 101', 'm101', 'NGC0224' -> 'M101', 'M101', 'NGC224' (for matching names)."""
+    s = re.sub(r"\s+", "", s).upper()
+    m = re.match(r"^(NGC|IC|M)0*(\d+.*)$", s)
+    return m.group(1) + m.group(2) if m else s
+
+
+def load_favorites(path):
+    """Read favorites file: one object per line, '#' starts a comment."""
+    if not path or not os.path.exists(path):
+        return set()
+    with open(path, encoding="utf-8") as f:
+        return {norm_id(line.split("#")[0]) for line in f if line.split("#")[0].strip()}
+
+
+def is_favorite(o, favs):
+    return bool(favs) and any(norm_id(n) in favs for n in [o["name"], *o["aliases"], o["common"]] if n)
 
 # ---------------------------------------------------------------------------
 # Object types
@@ -314,7 +334,7 @@ def build_parser(cfg):
     g.add_argument("--tz", default=cfg.get("tz", "local"),
                    help="time zone, e.g. Europe/Kyiv or +02:00")
     g.add_argument("--save", action="store_true",
-                   help="save --lat/--lon/--tz to config.json as new defaults")
+                   help="save location, window (--az-from/--az-to/--alt-min/--alt-max) and camera settings to config.json as new defaults")
 
     g = p.add_argument_group("time period (local time)")
     g.add_argument("--date", help="date of the evening, YYYY-MM-DD (default: today)")
@@ -346,6 +366,10 @@ def build_parser(cfg):
     g.add_argument("--min-size", type=float, default=0, help="smallest major axis, arcmin")
     g.add_argument("--no-mag", action="store_true",
                    help="also include objects that have no magnitude in the catalog")
+    g.add_argument("--favorites", default=cfg.get("favorites", FAVORITES_FILE),
+                   help="file with favorite objects, one per line (e.g. 'M 101', 'NGC 6946')")
+    g.add_argument("--favorites-only", action="store_true",
+                   help="only list favorites (other filters like --max-mag are ignored for them)")
 
     g = p.add_argument_group("camera / telescope (for frame size and the HTML frame view)")
     g.add_argument("--focal", type=float, default=cfg.get("focal", 750),
@@ -377,10 +401,14 @@ def main():
         sys.exit("Observer location needed: --lat 50.45 --lon 30.52 "
                  "(add --save to remember it in config.json)")
     if args.save:
-        cfg.update({"lat": args.lat, "lon": args.lon, "tz": args.tz})
+        cfg.update({"lat": args.lat, "lon": args.lon, "tz": args.tz,
+                    "az_from": args.az_from, "az_to": args.az_to,
+                    "alt_min": args.alt_min, "alt_max": args.alt_max,
+                    "focal": args.focal, "pixel": args.pixel, "sensor": args.sensor,
+                    "camera_name": args.camera_name})
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2)
-        print(f"Saved location to {CONFIG_FILE}")
+        print(f"Saved settings to {CONFIG_FILE}")
 
     tz = get_tz(args.tz)
     start, end = parse_period(args, tz)
@@ -397,8 +425,17 @@ def main():
     frame_w, frame_h = sw * scale / 60, sh * scale / 60     # arcmin
 
     catalog = load_catalog()
+    favs = load_favorites(args.favorites)
+    if args.favorites_only and not favs:
+        sys.exit(f"No favorites found in {args.favorites}. Add one object per line, e.g. 'M 101'.")
+
     objs = []
     for o in catalog:
+        o["fav"] = is_favorite(o, favs)
+        if args.favorites_only:
+            if o["fav"]:
+                objs.append(o)
+            continue
         in_cat = (o["cat"] in cats) or ("m" in cats and o["messier"])
         if not in_cat or o["group"] not in types:
             continue
@@ -429,6 +466,12 @@ def main():
     inside = (alt >= args.alt_min) & (alt <= args.alt_max) & az_in_range(az, az_from, az_to)
     step_min = (end - start).total_seconds() / 60 / n_steps
 
+    # sample indices for the sky path drawn in the HTML report (max ~60 points)
+    k = max(1, math.ceil(len(times) / 60))
+    track_idx = list(range(0, len(times), k))
+    if track_idx[-1] != len(times) - 1:
+        track_idx.append(len(times) - 1)
+
     results = []
     for i, o in enumerate(objs):
         row = inside[i]
@@ -449,6 +492,7 @@ def main():
             "az_start": float(az[i, 0]), "az_end": float(az[i, -1]),
             "enter": times[idx[0]], "leave": times[idx[-1]],
             "minutes": minutes,
+            "track": [[round(float(alt[i, j]), 1), round(float(az[i, j]), 1)] for j in track_idx],
         })
 
     # --- other catalog objects near each result (for the frame view) ------
@@ -499,9 +543,12 @@ def main():
     print(f"Window:   azimuth {az_from:.0f}..{az_to:.0f} deg ({compass(az_from)}..{compass(az_to)}), "
           f"altitude {args.alt_min:.0f}..{args.alt_max:.0f} deg"
           + ("   [whole period]" if args.whole else ""))
-    print(f"Filters:  catalogs={','.join(sorted(cats))}  types={','.join(sorted(types))}  "
-          f"mag<={args.max_mag}" + (f"  SB<={args.max_sb}" if args.max_sb else "")
-          + (f"  size>={args.min_size}'" if args.min_size else ""))
+    if args.favorites_only:
+        print(f"Filters:  favorites only ({len(favs)} in {os.path.basename(args.favorites)})")
+    else:
+        print(f"Filters:  catalogs={','.join(sorted(cats))}  types={','.join(sorted(types))}  "
+              f"mag<={args.max_mag}" + (f"  SB<={args.max_sb}" if args.max_sb else "")
+              + (f"  size>={args.min_size}'" if args.min_size else ""))
     print(f"Camera:   {args.camera_name}: frame {frame_w:.1f}' x {frame_h:.1f}', {scale:.2f}\"/px")
     print(f"Found:    {len(results)} objects" + (f" (showing {len(shown)})" if len(shown) < len(results) else ""))
     print()
@@ -513,7 +560,7 @@ def main():
         size = "-" if r["maj"] is None else (
             f"{r['maj']:.1f}" if r["min"] == r["maj"] else f"{r['maj']:.1f}x{r['min']:.1f}")
         rows.append([
-            r["name"],
+            ("★ " if r["fav"] else "") + r["name"],
             ", ".join(r["aliases"]),
             r["type"],
             fmt(r["mag"], ".1f") + (r["mag_band"] if r["mag_band"] == "B" else ""),
@@ -564,14 +611,18 @@ def main():
                 "ra": round(r["ra"], 5), "dec": round(r["dec"], 5),
                 "ra_s": r["ra_s"], "dec_s": r["dec_s"],
                 "nb": r["nb"], "n_in_frame": r["n_in_frame"],
+                "track": r["track"],
             })
         write_report(args.html, {
             "period": f"{start:%Y-%m-%d %H:%M} → {end:%H:%M} ({start.tzname()})",
             "window": f"az {az_from:.0f}–{az_to:.0f}° ({compass(az_from)}–{compass(az_to)}), "
                       f"alt {args.alt_min:.0f}–{args.alt_max:.0f}°",
             "lat": args.lat, "lon": args.lon,
+            "win": {"az_from": az_from, "az_to": az_to, "alt_min": args.alt_min, "alt_max": args.alt_max},
+            "track_times": [f"{times[j]:%H:%M}" for j in track_idx],
             "camera": {"name": args.camera_name, "fw": frame_w, "fh": frame_h, "scale": scale},
             "rows": rows,
+            "favorites": [r["name"] for r in results if r["fav"]],
         })
         print(f"\nWrote HTML report to {args.html}")
 
