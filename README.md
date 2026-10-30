@@ -4,6 +4,8 @@ Finds NGC / IC / Messier objects that pass through a patch of sky (by default
 **azimuth NW–N, altitude 10–45°**) during a time period, and shows how each one
 fits in the camera frame (default: **ASI290MC on a 150 mm f/5 reflector**).
 
+![HTML report: object list and M51 in the ASI290MC frame](docs/screenshot.png)
+
 Needs Python 3.9+ and numpy. Catalog: [OpenNGC](https://github.com/mattiaverga/OpenNGC) (CC-BY-SA-4.0), in `data/`.
 
 ## Quick start
@@ -42,6 +44,10 @@ Open the HTML file in a browser and click any row to see it in the camera frame.
 - Optional photo underlay (Legacy Survey) to compare with the real sky; links to Aladin, SIMBAD.
 - **Night mode** turns everything red.
 - Open a given object directly: `tonight.html#M 101`.
+
+<img src="docs/frame-photo.png" alt="NGC 5866 in the frame with the survey photo underlay" width="420">
+
+*NGC 5866 with the photo underlay on: the schematic outline matches the real galaxy.*
 
 The page layout lives in `templates/report.html`.
 
