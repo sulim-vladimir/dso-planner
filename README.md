@@ -7,6 +7,8 @@ fits in the camera frame (default: **ASI290MC on a 150 mm f/5 reflector**).
 ![HTML report: object list and M51 in the ASI290MC frame](docs/screenshot.png)
 
 Needs Python 3.9+ and numpy. Catalog: [OpenNGC](https://github.com/mattiaverga/OpenNGC) (CC-BY-SA-4.0), in `data/`.
+Constellation lines and names: [Stellarium](https://stellarium.org) (western sky culture);
+star positions: [HYG database](https://github.com/astronexus/HYG-Database) (CC BY-SA 4.0).
 
 ## Quick start
 
@@ -44,10 +46,13 @@ Open the HTML file in a browser and click any row to see it in the camera frame.
 - Schematic of the object (true size and orientation) inside the 25.7′ × 14.6′ frame, with
   every other NGC/IC object nearby — galaxies, clusters, nebulae.
 - **Rotation** slider = camera rotation; **Zoom** slider = field around the frame.
-- **Where in the sky**: a view facing the window with the horizon, altitude lines, the window
+- **Where in the sky**: a view facing the window (stereographic projection, as in Stellarium, so shapes are true) with the horizon, altitude lines, the window
   outlined, the object's position at the start of the period and its path (hour marks) until the end.
   Faint dots are the other objects of the list at the start; click one to select it.
-- Optional photo underlay (Legacy Survey) to compare with the real sky; links to Aladin, SIMBAD.
+  Constellation lines (at the start of the period) help to find the spot; hover a star for its name.
+- Optional photo underlay to compare with the real sky; links to Aladin, SIMBAD.
+  *Auto* uses Legacy Survey (color, sharp) and switches to DSS2 red (NASA SkyView, whole sky)
+  for Milky Way objects, which Legacy Survey does not cover. The source can also be picked by hand.
 - **Night mode** turns everything red.
 - **↑ / ↓** (or `j` / `k`) move to the previous / next object in the table.
 - **Copy** button next to the object name (or press `c`) copies its catalog name, e.g. `NGC 6229`,
@@ -93,4 +98,4 @@ The page layout lives in `templates/report.html`.
 | `--csv FILE` | | save results as CSV |
 | `--focal`, `--pixel`, `--sensor` | 750, 2.9, 1936x1096 | telescope/camera (can be saved in `config.json`) |
 
-Run `./dso_window.py -h` for the full list. `./update_catalog.sh` refreshes the catalog.
+Run `./dso_window.py -h` for the full list. `./update_catalog.sh` refreshes the catalog and the constellation star positions.

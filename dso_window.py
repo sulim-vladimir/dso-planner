@@ -204,6 +204,75 @@ def load_catalog():
     return objects
 
 
+GREEK = {"Alp": "α", "Bet": "β", "Gam": "γ", "Del": "δ", "Eps": "ε", "Zet": "ζ", "Eta": "η", "The": "θ",
+         "Iot": "ι", "Kap": "κ", "Lam": "λ", "Mu": "μ", "Nu": "ν", "Xi": "ξ", "Omi": "ο", "Pi": "π",
+         "Rho": "ρ", "Sig": "σ", "Tau": "τ", "Ups": "υ", "Phi": "φ", "Chi": "χ", "Psi": "ψ", "Ome": "ω"}
+
+
+def load_constellations():
+    """Constellation stick figures (Stellarium, western sky culture) with star positions from HYG.
+    Returns (stars, figures): stars = {hip: (ra, dec, mag, label)}, figures = [(name, [(hip, hip), ...])],
+    or None when the data files are missing."""
+    paths = [os.path.join(DATA_DIR, f) for f in
+             ("constellation_stars.csv", "constellation_lines.fab", "constellation_names.fab")]
+    if not all(os.path.exists(p) for p in paths):
+        return None
+    stars = {}
+    with open(paths[0], newline="", encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            b = r["bayer"].split("-")
+            greek = GREEK.get(b[0], b[0]) + (b[1] if len(b) > 1 else "")
+            desig = f"{greek or r['flam']} {r['con']}".strip()
+            label = " · ".join(x for x in (r["name"], desig) if x)
+            stars[int(r["hip"])] = (float(r["ra"]), float(r["dec"]), float(r["mag"]), label)
+    names = {}
+    with open(paths[2], encoding="utf-8") as f:
+        for ln in f:
+            p = ln.split("\t")
+            if len(p) > 1:
+                names[p[0].strip()] = p[1].strip().strip('"')
+    figures = []
+    with open(paths[1], encoding="utf-8") as f:
+        for ln in f:
+            p = ln.split()
+            if len(p) < 4:
+                continue
+            hips = [int(h) for h in p[2:]]
+            segs = [(a, b) for a, b in zip(hips[0::2], hips[1::2]) if a in stars and b in stars]
+            figures.append((names.get(p[0], p[0]), segs))
+    return stars, figures
+
+
+def constellation_payload(jd, lst_deg, lat, win_center):
+    """Alt/az of the constellation figures at one moment, limited to the part of the sky
+    around the window that the report's sky view can show."""
+    data = load_constellations()
+    if data is None:
+        return None
+    stars, figures = data
+    hips = list(stars)
+    ra, dec = precess(np.array([stars[h][0] for h in hips]), np.array([stars[h][1] for h in hips]), jd)
+    alt, az = alt_az(ra[:, None], dec[:, None], lat, np.array([lst_deg]))
+    pos = {h: (float(alt[i, 0]), float(az[i, 0])) for i, h in enumerate(hips)}
+
+    def near(h):
+        a, z = pos[h]
+        return a > -10 and abs((z - win_center + 540) % 360 - 180) < 110
+
+    out_stars, index, out_figs = [], {}, []
+    for name, segs in figures:
+        keep = [(a, b) for a, b in segs if near(a) or near(b)]
+        if not keep:
+            continue
+        for h in {h for seg in keep for h in seg}:
+            if h not in index:
+                index[h] = len(out_stars)
+                a, z = pos[h]
+                out_stars.append([round(a, 2), round(z, 2), stars[h][2], stars[h][3]])
+        out_figs.append({"name": name, "seg": [[index[a], index[b]] for a, b in keep]})
+    return {"stars": out_stars, "figures": out_figs}
+
+
 # ---------------------------------------------------------------------------
 # Astronomy (accurate to a few arcminutes - plenty for choosing targets)
 # ---------------------------------------------------------------------------
@@ -623,6 +692,8 @@ def main():
             "camera": {"name": args.camera_name, "fw": frame_w, "fh": frame_h, "scale": scale},
             "rows": rows,
             "favorites": [r["name"] for r in results if r["fav"]],
+            "constellations": constellation_payload(
+                jds[0], lst[0], args.lat, (az_from + ((az_to - az_from) % 360.0 or 360.0) / 2) % 360),
         })
         print(f"\nWrote HTML report to {args.html}")
 
